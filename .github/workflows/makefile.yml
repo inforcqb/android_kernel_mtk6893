@@ -4,26 +4,24 @@ name: 编译Realme-GTNeo系列-安卓13-mt6893机型内核
 on:
   workflow_dispatch:
 
+
 jobs:
   build:
-
-    runs-on: ubuntu-latest
-
+    runs-on: ubuntu-22.04
+    # 添加写权限以创建Release
+    permissions:
+      contents: write
+    
     steps:
-    - uses: actions/checkout@v3
-
-
-
     - name: 构建编译内核环境
       run: |
         sudo apt-get update
         sudo -E apt-get -y -qq install git make bc bison ccache openssl dos2unix zip kmod cpio flex libelf-dev curl libssl-dev libtfm-dev wget device-tree-compiler ca-certificates python3 python2 binutils binutils-aarch64-linux-gnu binutils-arm-linux-gnueabi
-        mkdir -p $GITHUB_WORKSPACE/kernel_workspace
-
-
+        mkdir -p $GITHUB_WORKSPACE/kernel_workspace 
 
     - name: 下载 Gcc编译器
       run: |
+        mkdir -p $GITHUB_WORKSPACE/kernel_workspace
         cd $GITHUB_WORKSPACE/kernel_workspace
         
         mkdir gcc64
@@ -33,67 +31,130 @@ jobs:
         mkdir gcc32
         wget -O gcc-arm.tar.gz https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/arm/arm-linux-androideabi-4.9/+archive/refs/tags/android-12.1.0_r27.tar.gz
         tar -C gcc32/ -zxvf gcc-arm.tar.gz
-    
+
     - name: 下载Clang编译器
       run: |
         cd $GITHUB_WORKSPACE/kernel_workspace
         mkdir clang-aosp
-        git clone -q --depth=1 https://github.com/crdroidandroid/android_prebuilts_clang_host_linux-x86_clang-6443078 -b 10.0 clang-aosp
-    
-    
-    - name: 下载内核源码
-      run: |
-        cd $GITHUB_WORKSPACE/kernel_workspace
-        git clone https://github.com/wu17481748/android_kernel_mtk6893 android-kernel
-        cd android-kernel
+        git clone --depth=1 https://github.com/crdroidandroid/android_prebuilts_clang_host_linux-x86_clang-6443078 -b 10.0 clang-aosp
 
-
-
+    - name: 检出本仓库源码
+      uses: actions/checkout@v4
+      with:
+        # 检出当前仓库的当前分支
+        repository: ${{ github.repository }}
+        ref: ${{ github.ref }}
+        # 检出到指定目录
+        path: kernel_workspace/android-kernel
+        # 获取完整提交历史（用于KSU版本计算）
+        fetch-depth: 0
     - name: 更新 ksu
       run: |
         cd $GITHUB_WORKSPACE/kernel_workspace/android-kernel
         rm -rf KernelSU
-        curl -LSs "https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh" | bash -s ${{ env.KERNELSU_TAG }}
+        curl -LSs "https://raw.githubusercontent.com/KernelSU-Next/KernelSU-Next/legacy/kernel/setup.sh" | bash -s v3.1.0-legacy
+        sed -i 's/task_work_add(tsk, cb, TWA_RESUME);/task_work_add(tsk, cb, 0);/' ./drivers/kernelsu/allowlist.c
+        cd KernelSU-Next
+        KSU_VERSION=$(expr $(/usr/bin/git rev-list --count HEAD) "+" 10200)
+        echo "KSUVER=$KSU_VERSION" >> $GITHUB_ENV
+        sed -i "s/DKSU_VERSION=16/DKSU_VERSION=${KSU_VERSION}/" kernel/Makefile
+        cd ..
+        #sed -i '/atomic_set(&current->seccomp.filter_count, 0);/d' drivers/kernelsu/core_hook.c
 
-               
     - name: 设置ccache缓存
       uses: hendrikmuhs/ccache-action@v1.2
       with:
         key: build-kernel-mido-kernel
-        max-size: 2G
+        max-size: 5G
 
- 
     - name: 开始编译内核
       run: |
         cd $GITHUB_WORKSPACE/kernel_workspace/android-kernel
         export PATH=$GITHUB_WORKSPACE/kernel_workspace/clang-aosp/bin:$GITHUB_WORKSPACE/kernel_workspace/gcc64/bin:$GITHUB_WORKSPACE/kernel_workspace/gcc32/bin:$PATH
-        export KBUILD_BUILD_HOST=24
-        export KBUILD_BUILD_USER=kuan-jsbsbxjxh66
-        make -s -j$(nproc --all) O=out ARCH=arm64 mtk6893_defconfig
+        export KBUILD_BUILD_USER=user
+        export KBUILD_BUILD_HOST=host
+        export KBUILD_BUILD_TIMESTAMP="Tue Mar 4 10:16:14 CST 2025" 
+        # 防止检查构筑信息而被识别为第三方内核
+        make -s -j$(nproc --all) O=out ARCH=arm64 mt6853-ss_defconfig
         make -j$(nproc --all) CC="ccache clang" O=out ARCH=arm64 CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=aarch64-linux-android- CROSS_COMPILE_ARM32=arm-linux-androideabi- LD=ld.lld
-                
 
     - name: 制作Anykernel3卡刷包
       run: |
         cd $GITHUB_WORKSPACE/kernel_workspace
-        git clone https://github.com/osm0sis/AnyKernel3
-        sed -i 's/do.devicecheck=1/do.devicecheck=0/g' AnyKernel3/anykernel.sh
-        sed -i 's!block=/dev/block/platform/omap/omap_hsmmc.0/by-name/boot;!block=auto;!g' AnyKernel3/anykernel.sh
-        sed -i 's/is_slot_device=0;/is_slot_device=auto;/g' AnyKernel3/anykernel.sh
-        cp android-kernel/out/arch/arm64/boot/Image.gz AnyKernel3/
+        git clone https://github.com/Winkmoon/AnyKernel3
+        cp android-kernel/out/arch/arm64/boot/Image.gz-dtb AnyKernel3/
         rm -rf AnyKernel3/.git* AnyKernel3/README.md
-        
-    
-    
-    - name: 上传 Anykernel3
-      uses: actions/upload-artifact@v3
-      with:
-        name: GTNeo系列-ksu-lxc-docker-安卓13-mtk6893内核-卡刷包
-        path: kernel_workspace/AnyKernel3/*
-        
+        cd AnyKernel3
+        zip -r ../ShirokoNeko-kernel-mt6853.zip .
 
-    - name: 上传编译内核
-      uses: actions/upload-artifact@v3
+    - name: 生成版本号和构筑日期
+      id: version
+      run: |
+        BUILD_DATE=$(date +'%Y-%m-%d %H:%M:%S')
+        RELEASE_TAG="v$(date +'%Y.%m.%d')-build-${GITHUB_RUN_ID}"
+        
+        echo "BUILD_DATE=${BUILD_DATE}" >> $GITHUB_ENV
+        echo "RELEASE_TAG=${RELEASE_TAG}" >> $GITHUB_ENV
+        echo "RELEASE_NAME=ShirokoNeko Kernel ${RELEASE_TAG}" >> $GITHUB_ENV
+        
+        # 生成包含构筑日期的文件
+        echo "构建时间: ${BUILD_DATE}" > build-info.txt
+        echo "构建ID: ${GITHUB_RUN_ID}" >> build-info.txt
+        echo "提交: ${GITHUB_SHA}" >> build-info.txt
+        echo "触发分支: ${GITHUB_REF_NAME}" >> build-info.txt
+
+    - name: 创建 GitHub Release
+      uses: softprops/action-gh-release@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       with:
-        name: mtk6893内核-Image.gz
-        path: kernel_workspace/android-kernel/out/arch/arm64/boot/Image.gz-dtb
+        tag_name: ${{ env.RELEASE_TAG }}
+        name: ${{ env.RELEASE_NAME }}
+        body: |
+          ## 🚀 ShirokoNeko Kernel for OPPO/Realme MT6853
+          
+          ### 构筑信息
+          - **构筑日期**: ${{ env.BUILD_DATE }}
+          - **构筑ID**: ${{ github.run_id }}
+          - **Git提交**: ${{ github.sha }}
+          - **构建分支**: ${{ github.ref_name }}
+          
+          ### 功能特性
+          ✅ 支持 KernelSU Next v3.1.0-legacy
+          ✅ Docker 容器支持
+          ✅ LXC 容器支持
+          ✅ KVM 虚拟化支持
+          ✅ Kali Nethunter 支持
+          
+          ### 刷机说明
+          1. 下载对应的刷机包
+          2. 进入 Recovery 模式
+          3. 刷入内核包
+          4. 重启设备
+          
+          ### 注意事项
+          - 仅适用于 Android 13
+          - 仅支持 MT6893 平台
+          - 刷机有风险，请提前备份
+          
+          ---
+          
+          *本构建由 GitHub Actions 自动生成*
+          
+        draft: false
+        prerelease: false
+        files: |
+          ${{ github.workspace }}/kernel_workspace/ShirokoNeko-kernel-mt6853.zip
+          ${{ github.workspace }}/kernel_workspace/android-kernel/out/arch/arm64/boot/Image.gz
+          ${{ github.workspace }}/build-info.txt
+        generate_release_notes: true
+        continue-on-error: true
+
+    - name: 上传构建产物作为工作流 artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: Android12@Xinran_StarBai-构建产物
+        path: |
+          kernel_workspace/ShirokoNeko-kernel-mt6853.zip
+          kernel_workspace/android-kernel/out/arch/arm64/boot/Image.gz
+          build-info.txt
