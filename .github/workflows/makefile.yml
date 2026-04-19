@@ -53,7 +53,7 @@ jobs:
         cd $GITHUB_WORKSPACE/kernel_workspace/android-kernel
         rm -rf KernelSU
         curl -LSs "https://raw.githubusercontent.com/KernelSU-Next/KernelSU-Next/legacy/kernel/setup.sh" | bash -s v3.2.0-legacy
-        sed -i 's/task_work_add(tsk, cb, TWA_RESUME);/task_work_add(tsk, cb, 0);/' ./drivers/kernelsu/allowlist.c
+        #sed -i 's/task_work_add(tsk, cb, TWA_RESUME);/task_work_add(tsk, cb, 0);/' ./drivers/kernelsu/allowlist.c
         cd KernelSU-Next
         KSU_VERSION=$(expr $(/usr/bin/git rev-list --count HEAD) "+" 10200)
         echo "KSUVER=$KSU_VERSION" >> $GITHUB_ENV
