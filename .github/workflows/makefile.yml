@@ -85,7 +85,7 @@ jobs:
         cp android-kernel/out/arch/arm64/boot/Image.gz-dtb AnyKernel3/
         rm -rf AnyKernel3/.git* AnyKernel3/README.md
         cd AnyKernel3
-        zip -r ../ShirokoNeko-kernel-mt6893.zip .
+        zip -r ../kernel-mt6893.zip .
 
     - name: 生成版本号和构筑日期
       id: version
@@ -111,7 +111,7 @@ jobs:
         tag_name: ${{ env.RELEASE_TAG }}
         name: ${{ env.RELEASE_NAME }}
         body: |
-          ## 🚀 ShirokoNeko Kernel for OPPO/Realme MT6893
+          ## 🚀 Kernel for OPPO/Realme MT6893
           
           ### 构筑信息
           - **构筑日期**: ${{ env.BUILD_DATE }}
@@ -124,7 +124,6 @@ jobs:
           ✅ Docker 容器支持
           ✅ LXC 容器支持
           ✅ KVM 虚拟化支持
-          ✅ Kali Nethunter 支持
           
           ### 刷机说明
           1. 下载对应的刷机包
@@ -153,8 +152,8 @@ jobs:
     - name: 上传构建产物作为工作流 artifact
       uses: actions/upload-artifact@v4
       with:
-        name: Android12@Xinran_StarBai-构建产物
+        name: 构建产物
         path: |
-          kernel_workspace/ShirokoNeko-kernel-mt6893.zip
+          kernel_workspace/kernel-mt6893.zip
           kernel_workspace/android-kernel/out/arch/arm64/boot/Image.gz
           build-info.txt
