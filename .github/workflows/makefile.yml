@@ -85,7 +85,7 @@ jobs:
         cp android-kernel/out/arch/arm64/boot/Image.gz-dtb AnyKernel3/
         rm -rf AnyKernel3/.git* AnyKernel3/README.md
         cd AnyKernel3
-        zip -r ../ShirokoNeko-kernel-mt6853.zip .
+        zip -r ../ShirokoNeko-kernel-mt6893.zip .
 
     - name: 生成版本号和构筑日期
       id: version
@@ -111,7 +111,7 @@ jobs:
         tag_name: ${{ env.RELEASE_TAG }}
         name: ${{ env.RELEASE_NAME }}
         body: |
-          ## 🚀 ShirokoNeko Kernel for OPPO/Realme MT6853
+          ## 🚀 ShirokoNeko Kernel for OPPO/Realme MT6893
           
           ### 构筑信息
           - **构筑日期**: ${{ env.BUILD_DATE }}
@@ -120,7 +120,7 @@ jobs:
           - **构建分支**: ${{ github.ref_name }}
           
           ### 功能特性
-          ✅ 支持 KernelSU Next v3.1.0-legacy
+          ✅ 支持 KernelSU Next v3.2.0-legacy
           ✅ Docker 容器支持
           ✅ LXC 容器支持
           ✅ KVM 虚拟化支持
@@ -144,7 +144,7 @@ jobs:
         draft: false
         prerelease: false
         files: |
-          ${{ github.workspace }}/kernel_workspace/ShirokoNeko-kernel-mt6853.zip
+          ${{ github.workspace }}/kernel_workspace/ShirokoNeko-kernel-mt6893.zip
           ${{ github.workspace }}/kernel_workspace/android-kernel/out/arch/arm64/boot/Image.gz
           ${{ github.workspace }}/build-info.txt
         generate_release_notes: true
@@ -155,6 +155,6 @@ jobs:
       with:
         name: Android12@Xinran_StarBai-构建产物
         path: |
-          kernel_workspace/ShirokoNeko-kernel-mt6853.zip
+          kernel_workspace/ShirokoNeko-kernel-mt6893.zip
           kernel_workspace/android-kernel/out/arch/arm64/boot/Image.gz
           build-info.txt
