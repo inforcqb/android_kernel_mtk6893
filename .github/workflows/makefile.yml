@@ -61,6 +61,18 @@ jobs:
         cd ..
         #sed -i '/atomic_set(&current->seccomp.filter_count, 0);/d' drivers/kernelsu/core_hook.c
 
+    - name: 安装susfs
+      run:  |
+        cd $GITHUB_WORKSPACE
+        git clone https://gitlab.com/simonpunk/susfs4ksu/ -b kernel-4.19
+        cd susfs4ksu
+        cp ./kernel_patches/KernelSU/10_enable_susfs_for_ksu.patch $GITHUB_WORKSPACE/kernel_workspace/android-kernel/KernelSU/
+        cp ./kernel_patches/50_add_susfs_in_kernel-4.19.patch $GITHUB_WORKSPACE/kernel_workspace/android-kernel/
+        cp ./kernel_patches/fs/* $GITHUB_WORKSPACE/kernel_workspace/android-kernel/fs/
+        cp ./kernel_patches/include/linux/* $GITHUB_WORKSPACE/kernel_workspace/android-kernel/include/linux/
+        cd $GITHUB_WORKSPACE/kernel_workspace/android-kernel/KernelSU
+        patch -p1 < 10_enable_susfs_for_ksu.patch
+        
     - name: 设置ccache缓存
       uses: hendrikmuhs/ccache-action@v1.2
       with:
