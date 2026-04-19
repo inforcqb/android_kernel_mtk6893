@@ -95,7 +95,7 @@ jobs:
         
         echo "BUILD_DATE=${BUILD_DATE}" >> $GITHUB_ENV
         echo "RELEASE_TAG=${RELEASE_TAG}" >> $GITHUB_ENV
-        echo "RELEASE_NAME=ShirokoNeko Kernel ${RELEASE_TAG}" >> $GITHUB_ENV
+        echo "RELEASE_NAME=Kernel ${RELEASE_TAG}" >> $GITHUB_ENV
         
         # 生成包含构筑日期的文件
         echo "构建时间: ${BUILD_DATE}" > build-info.txt
