@@ -143,7 +143,7 @@ jobs:
         draft: false
         prerelease: false
         files: |
-          ${{ github.workspace }}/kernel_workspace/ShirokoNeko-kernel-mt6893.zip
+          ${{ github.workspace }}/kernel_workspace/ShirokoNeko-kernel-mt6893.zipkernel-mt6893.zip
           ${{ github.workspace }}/kernel_workspace/android-kernel/out/arch/arm64/boot/Image.gz
           ${{ github.workspace }}/build-info.txt
         generate_release_notes: true
