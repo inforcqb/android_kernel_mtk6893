@@ -120,7 +120,7 @@ jobs:
           - **构建分支**: ${{ github.ref_name }}
           
           ### 功能特性
-          ✅ 支持 KernelSU Next v3.2.0-legacy
+          ✅ 支持 reSukisu Ultra
           ✅ Docker 容器支持
           ✅ LXC 容器支持
           ✅ KVM 虚拟化支持
