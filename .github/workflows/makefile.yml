@@ -41,7 +41,7 @@ jobs:
           - name: clang
             type: git
             url: https://github.com/crdroidandroid/android_prebuilts_clang_host_linux-x86_clang-6443078
-            branch: 10.0
+            branch: "10.0"
             dir: clang-aosp
     
     steps:
