@@ -1,93 +1,184 @@
 name: 编译Realme-GTNeo系列-安卓13-mt6893机型内核
-                     支持ksu docker lxc
+支持ksu docker lxc
 
 on:
   workflow_dispatch:
 
-
 jobs:
-  build:
+  # 作业1: 配置编译环境
+  setup-environment:
+    name: 配置编译环境
     runs-on: ubuntu-22.04
-    # 添加写权限以创建Release
+    
+    steps:
+    - name: 安装系统依赖
+      run: |
+        sudo apt-get update
+        sudo -E apt-get -y -qq install git make bc bison ccache openssl dos2unix zip kmod cpio flex libelf-dev curl libssl-dev libtfm-dev wget device-tree-compiler ca-certificates python3 python2 binutils binutils-aarch64-linux-gnu binutils-arm-linux-gnueabi
+        mkdir -p $GITHUB_WORKSPACE/kernel_workspace
+
+    - name: 保存工作空间路径
+      run: |
+        echo "WORKSPACE_PATH=$GITHUB_WORKSPACE/kernel_workspace" >> $GITHUB_ENV
+
+  # 作业2: 并行下载编译工具链
+  download-toolchains:
+    name: 下载编译工具链
+    runs-on: ubuntu-22.04
+    needs: setup-environment
+    
+    strategy:
+      matrix:
+        toolchain:
+          - name: gcc64
+            url: https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/aarch64/aarch64-linux-android-4.9/+archive/refs/tags/android-12.1.0_r27.tar.gz
+            dir: gcc64
+            file: gcc-aarch64.tar.gz
+          - name: gcc32
+            url: https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/arm/arm-linux-androideabi-4.9/+archive/refs/tags/android-12.1.0_r27.tar.gz
+            dir: gcc32
+            file: gcc-arm.tar.gz
+          - name: clang
+            type: git
+            url: https://github.com/crdroidandroid/android_prebuilts_clang_host_linux-x86_clang-6443078
+            branch: 10.0
+            dir: clang-aosp
+    
+    steps:
+    - name: 创建工具链目录
+      run: |
+        mkdir -p ${{ github.workspace }}/kernel_workspace
+        cd ${{ github.workspace }}/kernel_workspace
+        
+    - name: 下载工具链 - ${{ matrix.toolchain.name }}
+      run: |
+        cd ${{ github.workspace }}/kernel_workspace
+        
+        if [ "${{ matrix.toolchain.type }}" = "git" ]; then
+          echo "正在克隆 ${{ matrix.toolchain.name }}..."
+          mkdir -p ${{ matrix.toolchain.dir }}
+          git clone --depth=1 ${{ matrix.toolchain.url }} -b ${{ matrix.toolchain.branch }} ${{ matrix.toolchain.dir }}
+        else
+          echo "正在下载 ${{ matrix.toolchain.name }}..."
+          mkdir -p ${{ matrix.toolchain.dir }}
+          wget -O ${{ matrix.toolchain.file }} ${{ matrix.toolchain.url }}
+          tar -C ${{ matrix.toolchain.dir }}/ -zxvf ${{ matrix.toolchain.file }}
+        fi
+        
+    - name: 上传工具链为工件
+      uses: actions/upload-artifact@v4
+      with:
+        name: toolchain-${{ matrix.toolchain.name }}
+        path: ${{ github.workspace }}/kernel_workspace/${{ matrix.toolchain.dir }}
+        retention-days: 1
+
+  # 作业3: 编译内核
+  compile-kernel:
+    name: 编译内核
+    runs-on: ubuntu-22.04
+    needs: [setup-environment, download-toolchains]
     permissions:
       contents: write
     
     steps:
-    - name: 构建编译内核环境
-      run: |
-        sudo apt-get update
-        sudo -E apt-get -y -qq install git make bc bison ccache openssl dos2unix zip kmod cpio flex libelf-dev curl libssl-dev libtfm-dev wget device-tree-compiler ca-certificates python3 python2 binutils binutils-aarch64-linux-gnu binutils-arm-linux-gnueabi
-        mkdir -p $GITHUB_WORKSPACE/kernel_workspace 
-
-    - name: 下载 Gcc编译器
-      run: |
-        mkdir -p $GITHUB_WORKSPACE/kernel_workspace
-        cd $GITHUB_WORKSPACE/kernel_workspace
+    - name: 下载编译工具链
+      uses: actions/download-artifact@v4
+      with:
+        name: toolchain-gcc64
+        path: ${{ github.workspace }}/kernel_workspace/gcc64
         
-        mkdir gcc64
-        wget -O gcc-aarch64.tar.gz https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/aarch64/aarch64-linux-android-4.9/+archive/refs/tags/android-12.1.0_r27.tar.gz
-        tar -C gcc64/ -zxvf gcc-aarch64.tar.gz
-    
-        mkdir gcc32
-        wget -O gcc-arm.tar.gz https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/arm/arm-linux-androideabi-4.9/+archive/refs/tags/android-12.1.0_r27.tar.gz
-        tar -C gcc32/ -zxvf gcc-arm.tar.gz
+    - name: 下载编译工具链
+      uses: actions/download-artifact@v4
+      with:
+        name: toolchain-gcc32
+        path: ${{ github.workspace }}/kernel_workspace/gcc32
+        
+    - name: 下载编译工具链
+      uses: actions/download-artifact@v4
+      with:
+        name: toolchain-clang
+        path: ${{ github.workspace }}/kernel_workspace/clang-aosp
 
-    - name: 下载Clang编译器
-      run: |
-        cd $GITHUB_WORKSPACE/kernel_workspace
-        mkdir clang-aosp
-        git clone --depth=1 https://github.com/crdroidandroid/android_prebuilts_clang_host_linux-x86_clang-6443078 -b 10.0 clang-aosp
+    - name: 设置ccache缓存
+      uses: hendrikmuhs/ccache-action@v1.2
+      with:
+        key: build-kernel-mt6893-kernel-${{ github.sha }}
+        max-size: 5G
 
-    - name: 检出本仓库源码
+    - name: 检出内核源码
       uses: actions/checkout@v4
       with:
-        # 检出当前仓库的当前分支
         repository: ${{ github.repository }}
         ref: ${{ github.ref }}
-        # 检出到指定目录
-        path: kernel_workspace/android-kernel
-        # 获取完整提交历史（用于KSU版本计算）
+        path: ${{ github.workspace }}/kernel_workspace/android-kernel
         fetch-depth: 0
-    - name: 更新 ksu
+
+    - name: 更新 KernelSU
       run: |
-        cd $GITHUB_WORKSPACE/kernel_workspace/android-kernel
+        cd ${{ github.workspace }}/kernel_workspace/android-kernel
         rm -rf KernelSU
         curl -LSs "https://raw.githubusercontent.com/ReSukiSU/ReSukiSU/main/kernel/setup.sh" | bash
-        #sed -i 's/task_work_add(tsk, cb, TWA_RESUME);/task_work_add(tsk, cb, 0);/' ./drivers/kernelsu/allowlist.c
         cd KernelSU
         KSU_VERSION=$(expr $(/usr/bin/git rev-list --count HEAD) "+" 10200)
         echo "KSUVER=$KSU_VERSION" >> $GITHUB_ENV
         sed -i "s/DKSU_VERSION=16/DKSU_VERSION=${KSU_VERSION}/" kernel/Makefile
         cd ..
-        #sed -i '/atomic_set(&current->seccomp.filter_count, 0);/d' drivers/kernelsu/core_hook.c
 
-    - name: 设置ccache缓存
-      uses: hendrikmuhs/ccache-action@v1.2
-      with:
-        key: build-kernel-mido-kernel
-        max-size: 5G
+    - name: 设置环境变量
+      run: |
+        echo "CLANG_PATH=${{ github.workspace }}/kernel_workspace/clang-aosp/bin" >> $GITHUB_ENV
+        echo "GCC64_PATH=${{ github.workspace }}/kernel_workspace/gcc64/bin" >> $GITHUB_ENV
+        echo "GCC32_PATH=${{ github.workspace }}/kernel_workspace/gcc32/bin" >> $GITHUB_ENV
+        echo "PATH=${{ github.workspace }}/kernel_workspace/clang-aosp/bin:${{ github.workspace }}/kernel_workspace/gcc64/bin:${{ github.workspace }}/kernel_workspace/gcc32/bin:$PATH" >> $GITHUB_ENV
+        export KBUILD_BUILD_USER=user
+        export KBUILD_BUILD_HOST=host
+        export KBUILD_BUILD_TIMESTAMP="Tue Mar 4 10:16:14 CST 2025"
 
     - name: 开始编译内核
       run: |
-        cd $GITHUB_WORKSPACE/kernel_workspace/android-kernel
-        export PATH=$GITHUB_WORKSPACE/kernel_workspace/clang-aosp/bin:$GITHUB_WORKSPACE/kernel_workspace/gcc64/bin:$GITHUB_WORKSPACE/kernel_workspace/gcc32/bin:$PATH
-        export KBUILD_BUILD_USER=user
-        export KBUILD_BUILD_HOST=host
-        export KBUILD_BUILD_TIMESTAMP="Tue Mar 4 10:16:14 CST 2025" 
-        # 防止检查构筑信息而被识别为第三方内核
+        cd ${{ github.workspace }}/kernel_workspace/android-kernel
         make -s -j$(nproc --all) O=out ARCH=arm64 mtk6893_defconfig
         make -j$(nproc --all) CC="ccache clang" O=out ARCH=arm64 CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=aarch64-linux-android- CROSS_COMPILE_ARM32=arm-linux-androideabi- LD=ld.lld
 
-    - name: 制作Anykernel3卡刷包
+    - name: 上传编译产物
+      uses: actions/upload-artifact@v4
+      with:
+        name: kernel-build-output
+        path: |
+          ${{ github.workspace }}/kernel_workspace/android-kernel/out/arch/arm64/boot/Image.gz-dtb
+          ${{ github.workspace }}/kernel_workspace/android-kernel/out/arch/arm64/boot/Image.gz
+        retention-days: 1
+
+  # 作业4: 打包和发布
+  package-and-release:
+    name: 打包和发布
+    runs-on: ubuntu-22.04
+    needs: compile-kernel
+    permissions:
+      contents: write
+    
+    steps:
+    - name: 下载编译产物
+      uses: actions/download-artifact@v4
+      with:
+        name: kernel-build-output
+        path: ${{ github.workspace }}/kernel_workspace/build-output
+
+    - name: 下载 AnyKernel3
       run: |
-        cd $GITHUB_WORKSPACE/kernel_workspace
+        mkdir -p ${{ github.workspace }}/kernel_workspace
+        cd ${{ github.workspace }}/kernel_workspace
         git clone https://github.com/Winkmoon/AnyKernel3
-        cp android-kernel/out/arch/arm64/boot/Image.gz-dtb AnyKernel3/
         rm -rf AnyKernel3/.git* AnyKernel3/README.md
+
+    - name: 制作刷机包
+      run: |
+        cd ${{ github.workspace }}/kernel_workspace
+        cp build-output/Image.gz-dtb AnyKernel3/
         cd AnyKernel3
         zip -r ../kernel-mt6893.zip .
 
-    - name: 生成版本号和构筑日期
+    - name: 生成版本信息
       id: version
       run: |
         BUILD_DATE=$(date +'%Y-%m-%d %H:%M:%S')
@@ -97,11 +188,11 @@ jobs:
         echo "RELEASE_TAG=${RELEASE_TAG}" >> $GITHUB_ENV
         echo "RELEASE_NAME=Kernel ${RELEASE_TAG}" >> $GITHUB_ENV
         
-        # 生成包含构筑日期的文件
-        echo "构建时间: ${BUILD_DATE}" > build-info.txt
-        echo "构建ID: ${GITHUB_RUN_ID}" >> build-info.txt
-        echo "提交: ${GITHUB_SHA}" >> build-info.txt
-        echo "触发分支: ${GITHUB_REF_NAME}" >> build-info.txt
+        echo "构建时间: ${BUILD_DATE}" > ${{ github.workspace }}/build-info.txt
+        echo "构建ID: ${GITHUB_RUN_ID}" >> ${{ github.workspace }}/build-info.txt
+        echo "提交: ${GITHUB_SHA}" >> ${{ github.workspace }}/build-info.txt
+        echo "触发分支: ${GITHUB_REF_NAME}" >> ${{ github.workspace }}/build-info.txt
+        echo "支持KSU版本: ${KSUVER}" >> ${{ github.workspace }}/build-info.txt
 
     - name: 创建 GitHub Release
       uses: softprops/action-gh-release@v1
@@ -118,6 +209,7 @@ jobs:
           - **构筑ID**: ${{ github.run_id }}
           - **Git提交**: ${{ github.sha }}
           - **构建分支**: ${{ github.ref_name }}
+          - **KSU版本**: ${{ env.KSUVER }}
           
           ### 功能特性
           ✅ 支持 reSukisu Ultra
@@ -139,22 +231,19 @@ jobs:
           ---
           
           *本构建由 GitHub Actions 自动生成*
-          
         draft: false
         prerelease: false
         files: |
-          ${{ github.workspace }}/kernel_workspace/ShirokoNeko-kernel-mt6893.zip
-          ${{ github.workspace }}/kernel_workspace/android-kernel/out/arch/arm64/boot/Image.gz
+          ${{ github.workspace }}/kernel_workspace/kernel-mt6893.zip
+          ${{ github.workspace }}/kernel_workspace/build-output/Image.gz
           ${{ github.workspace }}/build-info.txt
         generate_release_notes: true
         continue-on-error: true
 
-    - name: 上传构建产物作为工作流 artifact
+    - name: 上传构建产物
       uses: actions/upload-artifact@v4
       with:
-        name: 构建产物
+        name: kernel-package
         path: |
-          kernel_workspace/kernel-mt6893.zip
-          kernel_workspace/android-kernel/out/arch/arm64/boot/Image.gz
-          build-info.txt
-
+          ${{ github.workspace }}/kernel_workspace/kernel-mt6893.zip
+          ${{ github.workspace }}/build-info.txt
